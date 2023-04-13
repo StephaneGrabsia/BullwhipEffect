@@ -26,8 +26,8 @@ class Agent:
         name,
         command_delay=2,
         reception_delay=2,
-        desired_security_invetory=12,
-        desired_coordination_invetory=0,
+        desired_security_inventory=12,
+        desired_coordination_inventory=0,
         theta=1,
     ):
         self.name = name
@@ -35,19 +35,25 @@ class Agent:
         self.inventory = 0
         self.command_delay = command_delay
         self.reception_delay = reception_delay
-        self.received_commands = []
-        self.sent_orders = []
+        self.received_shipments = [0, 0, 0, 0]
+        self.received_orders = [0, 0, 0, 0]
+        self.sent_orders = [0, 0, 0, 0]
         self.backlog = 0
         self.expected_order = 0
         self.alpha = 1
         self.beta = 1
         self.theta = theta
-        self.desired_security_invetory = desired_security_invetory
-        self.desired_coordination_inventory = desired_coordination_invetory
+        self.desired_security_inventory = desired_security_inventory
+        self.desired_coordination_inventory = desired_coordination_inventory
 
     def __str__(self):
         return f"Actor {self.name} at timestep {self.timestep} - Inventory : {self.inventory}; Backlog : {self.backlog}; Command sent : {self.sent_commands} ; Supply line : {self.sent_orders}"
 
+    def update_desired_security_stock(self):
+        """
+        Function using the formula from "Le vendeur de journaux"
+        """
+        
     def cost(self):
         """
         Calculate the cost caused by the stock and the inventory
@@ -71,7 +77,7 @@ class Agent:
         """
 
         desired_inventory = (
-            self.desired_coordination_inventory + self.desired_security_invetory
+            self.desired_coordination_inventory + self.desired_security_inventory
         )
         supply_line = np.sum(self.sent_orders[-(self.command_delay+self.reception_delay):])
 
@@ -82,7 +88,7 @@ class Agent:
             * (desired_inventory - self.inventory - self.beta * supply_line),
         )
 
-    def act(self, command_made_by_previous_actor, received_shipment):
+    def act(self, order_made_by_previous_actor, received_shipment):
         """
         Act at a time step :
         - Receive a shipment
@@ -93,10 +99,11 @@ class Agent:
 
         # Receive a shipment and place it in the inventory:
         self.inventory += received_shipment
+        self.received_shipments.append(received_shipment)
 
         # Receive the command of the previous actor
-        received_order = command_made_by_previous_actor
-        self.received_commands.append(command_made_by_previous_actor)
+        received_order = order_made_by_previous_actor
+        self.received_orders.append(order_made_by_previous_actor)
 
         # Answer this command:
         if self.inventory >= received_order:
@@ -113,7 +120,9 @@ class Agent:
         # Update inventory
         self.inventory -= sent_shipment
 
+        self.predict(order_made_by_previous_actor)
         new_order = self.behaviour()
         self.sent_orders.append(new_order)
 
         self.timestep += 1
+
