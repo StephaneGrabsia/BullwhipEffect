@@ -53,7 +53,16 @@ class Agent:
         """
         Function using the formula from "Le vendeur de journaux"
         """
-        
+        cs=0.5
+        cm=1
+        Flim=cm/(cm+cs)
+        empirical_demand=[self.received_shipments[i] for i in range (len(self.received_shipments)-10,len(self.received_shipments))]
+        desired_security_stock=0
+        for i in range (0,max(empirical_demand)+1):
+            F[i]=sum(1 for xi in empirical_demand if xi<=i)/10 # fonction de répartition
+            if F[i]>=Flim:
+                desired_security_stock=i
+        return desired_security_stock
     def cost(self):
         """
         Calculate the cost caused by the stock and the inventory
