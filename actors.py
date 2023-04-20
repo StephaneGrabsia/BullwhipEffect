@@ -7,13 +7,11 @@ class Client:
     """
 
     def __init__(self, demand_law):
-        self.timestep = 1
         self.demand_law = demand_law
         self.sent_demand = 0
 
-    def act(self):
-        self.sent_demand = self.demand_law(self.timestep)
-        self.timestep += 1
+    def act(self, timestep):
+        self.sent_demand = self.demand_law(timestep)
 
 
 class Agent:
@@ -26,18 +24,18 @@ class Agent:
         name,
         command_delay=2,
         reception_delay=2,
-        desired_security_inventory=12,
+        desired_security_inventory=16,
         desired_coordination_inventory=0,
         theta=1,
     ):
         self.name = name
-        self.timestep = 1
-        self.inventory = 0
+        self.inventory = 12
         self.command_delay = command_delay
         self.reception_delay = reception_delay
-        self.received_shipments = [0, 0, 0, 0]
-        self.received_orders = [0, 0, 0, 0]
-        self.sent_orders = [0, 0, 0, 0]
+        self.received_shipments = [4, 4, 4, 4]
+        self.received_orders = [4, 4, 4, 4]
+        self.sent_orders = [4, 4, 4, 4]
+        self.sent_shipments = [4, 4, 4, 4]
         self.backlog = 0
         self.expected_order = 0
         self.alpha = 1
@@ -53,7 +51,7 @@ class Agent:
         """
         Function using the formula from "Le vendeur de journaux"
         """
-        
+
     def cost(self):
         """
         Calculate the cost caused by the stock and the inventory
@@ -79,13 +77,15 @@ class Agent:
         desired_inventory = (
             self.desired_coordination_inventory + self.desired_security_inventory
         )
-        supply_line = np.sum(self.sent_orders[-(self.command_delay+self.reception_delay):])
-
+        supply_line = np.sum(
+            self.sent_orders[-(self.command_delay + self.reception_delay) :]
+        )
+        on_hand_inventory = self.inventory - self.backlog
         return max(
             0,
             self.expected_order
             + self.alpha
-            * (desired_inventory - self.inventory - self.beta * supply_line),
+            * (desired_inventory - on_hand_inventory - self.beta * supply_line)
         )
 
     def act(self, order_made_by_previous_actor, received_shipment):
@@ -112,17 +112,120 @@ class Agent:
             ):  # Si il y a du backlog, alors l'acteur a intéret a tenter de
                 # le diminuer au max
                 sent_shipment = min(self.inventory, received_order + self.backlog)
+                self.backlog -= (sent_shipment - received_order)
             else:
                 sent_shipment = received_order
         else:
             sent_shipment = self.inventory
+            self.backlog += (received_order - self.inventory)
 
         # Update inventory
         self.inventory -= sent_shipment
+        self.sent_shipments.append(sent_shipment)
 
         self.predict(order_made_by_previous_actor)
         new_order = self.behaviour()
         self.sent_orders.append(new_order)
 
-        self.timestep += 1
 
+class Game:
+    """
+    Pricipal class of the game, contains the series of actor
+    """
+
+    def __init__(self, list_of_actors, demand_law):
+        self.timestep = 1
+        self.list_of_actors = list_of_actors
+        self.global_cost = 0
+        self.client = Client(demand_law)
+
+    def display(self):
+        """
+        TO DO : Create a beautiful displaying function
+        """
+
+        
+        print("{: ^120}".format("Etat du jeu au timestep "+ str(self.timestep)))
+        print("="*120)
+
+        #1ere ligne
+        print("|{: ^12}".format("Client:"), end="")
+        for j in range(len(self.list_of_actors)):
+            print("|{: ^13}".format(self.list_of_actors[j].name), end="")
+            print("|{: ^12}".format("->"), end="")
+        print("|")
+
+        #2eme ligne:
+        print("|{: ^12}".format(" "), end="")
+        for j in range(len(self.list_of_actors)):
+            print("|{: ^13}".format("Inventory:"), end="")
+            sent_orders = self.list_of_actors[j].sent_orders[-self.list_of_actors[j].command_delay:].copy()
+            sent_orders.reverse()
+            str_orders = "  ".join([str(el) for el in sent_orders])
+            print("|{: ^12}".format(str_orders), end="")
+        print("|")
+
+        #3eme ligne 
+        print("|{: ^12}".format(self.client.sent_demand), end="")
+        for j in range(len(self.list_of_actors)):
+            print("|{: ^13}".format(self.list_of_actors[j].inventory), end="")
+            print("|{: ^12}".format(" "), end="")
+        print("|")
+
+        #4eme ligne
+        print("|{: ^12}".format("Total cost:"), end="")
+        for j in range(len(self.list_of_actors)):
+            print("|{: ^13}".format("Backlog :"), end="")
+            print("|{: ^12}".format("<-"), end="")
+        print("|")
+
+        #5eme ligne
+        print("|{: ^12}".format(self.global_cost), end="")
+        for j in range(len(self.list_of_actors)):
+            print("|{: ^13}".format(self.list_of_actors[j].backlog), end="")
+            if j!=(len(self.list_of_actors)-1):
+                shipments_in_transit = self.list_of_actors[j+1].sent_shipments[-self.list_of_actors[j].reception_delay:]
+            else:
+                shipments_in_transit = self.list_of_actors[j].sent_orders[-(self.list_of_actors[j].command_delay + self.list_of_actors[j].reception_delay):-self.list_of_actors[j].command_delay]
+            str_shipments = "  ".join([str(el) for el in shipments_in_transit])
+            print("|{: ^12}".format(str_shipments), end="")
+        print("|")
+
+    def play(self):
+        # First step : The client asks for some beer
+        self.client.act(self.timestep)
+
+        received_orders_at_each_step = [
+            actor.sent_orders[-actor.command_delay] for actor in self.list_of_actors
+        ]
+        received_shipment_at_each_step = [
+            actor.sent_shipments[-actor.reception_delay]
+            for actor in self.list_of_actors
+        ]
+
+        for i in range(len(self.list_of_actors)):
+            current_actor = self.list_of_actors[i]
+            if i == 0:
+                # If it's the first actor, then the precedent_actor is the client
+                received_order = self.client.sent_demand
+
+            else:
+                received_order = received_orders_at_each_step[i - 1]
+
+            if i == (len(self.list_of_actors) - 1):
+                # If it's the last actor, then the next actor is the factory
+                # So the receive shipments equals to the order sent 3 weeks ago
+
+                actor = self.list_of_actors[i]
+                received_shipment = actor.sent_orders[
+                    -(actor.command_delay + actor.reception_delay)
+                ]
+            else:
+                # If it's not the last, the received shipment corresponds to the shipment sent
+                # by the next actor two weeks ago
+                received_shipment = received_shipment_at_each_step[i + 1]
+
+            current_actor.act(received_order, received_shipment)
+            self.global_cost += current_actor.cost()
+
+        self.timestep += 1
