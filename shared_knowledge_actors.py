@@ -39,6 +39,7 @@ class Agent:
         self.received_orders = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
         self.sent_orders = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
         self.sent_shipments = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+        self.initial_client_demand = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
         self.backlog = 0
         self.expected_order = 4
         self.alpha = 1
@@ -58,10 +59,10 @@ class Agent:
         cs = 0.5
         cm = 1
         Flim = cm / (cm + cs)
-        if len(self.received_orders) > timeslot:
-            empirical_demand = self.received_orders[-timeslot:]
+        if len(self.initial_client_demand) > timeslot:
+            empirical_demand = self.initial_client_demand[-timeslot:]
         else:
-            empirical_demand = self.received_orders
+            empirical_demand = self.initial_client_demand
         F = np.zeros(max(empirical_demand) + 1)
         desired_security_stock = 0
         for i in range(0, max(empirical_demand) + 1):
@@ -75,7 +76,8 @@ class Agent:
             desired_security_stock
             + (self.reception_delay + self.command_delay - 2)
             * int(np.mean(empirical_demand))
-        )
+        ) 
+        
 
     def cost(self):
         """
@@ -107,7 +109,7 @@ class Agent:
         )
         on_hand_inventory = self.inventory - self.backlog
 
-        if self.name == "factory":
+        if self.name == "distributor":
             print("Supply line : " + str(supply_line))
             print("Expected orders :" + str(self.expected_order))
             print("Desired inventory :" + str((desired_inventory)))
@@ -136,7 +138,7 @@ class Agent:
             ),
         )
 
-    def act(self, order_made_by_previous_actor, received_shipment):
+    def act(self, order_made_by_previous_actor, received_shipment, client_demand):
         """
         Act at a time step :
         - Receive a shipment
@@ -155,6 +157,12 @@ class Agent:
         received_order = order_made_by_previous_actor
         self.received_orders.append(order_made_by_previous_actor)
 
+        # Acklowledge the actual demand of the initial client:
+        if self.name=="distributor":
+            print(client_demand)
+        self.initial_client_demand.append(client_demand)
+
+
         # Answer this command:
         if self.inventory >= received_order:
             if (
@@ -169,13 +177,13 @@ class Agent:
             sent_shipment = self.inventory
             self.backlog += received_order - self.inventory
 
-        if self.name == "factory":
+        if self.name == "distributor":
             print("Sent beers: " + str(sent_shipment))
         # Update inventory
         self.inventory -= sent_shipment
         self.sent_shipments.append(sent_shipment)
 
-        self.predict(order_made_by_previous_actor)
+        self.predict(self.initial_client_demand[-2])
         self.update_desired_security_stock()
         new_order = self.behaviour()
         self.sent_orders.append(new_order)
@@ -284,7 +292,7 @@ class Game:
                 # by the next actor two weeks ago
                 received_shipment = received_shipment_at_each_step[i + 1]
 
-            current_actor.act(received_order, received_shipment)
+            current_actor.act(received_order, received_shipment, self.client.sent_demand)
             self.global_cost += current_actor.cost()
 
         self.timestep += 1
