@@ -37,7 +37,7 @@ class Agent:
         self.command_delay = command_delay
         self.reception_delay = reception_delay
         self.received_shipments = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
-        self.received_orders = []
+        self.received_orders = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
         self.sent_orders = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
         self.sent_shipments = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
         self.backlog = 0
@@ -57,27 +57,27 @@ class Agent:
         Function using the formula from "Le vendeur de journaux"
         """
 
-        cs = 0.5
-        cm = 1
-        Flim = cm / (cm + cs)
-        if len(self.received_orders) > timeslot:
-            empirical_demand = self.received_orders[-timeslot:]
-        else:
-            empirical_demand = self.received_orders
-        F = np.zeros(max(empirical_demand) + 1)
-        desired_security_stock = 0
-        for i in range(0, max(empirical_demand) + 1):
-            F[i] = (
-                sum([1 for xi in empirical_demand if xi <= i]) / 10
-            )  # fonction de répartition
-            if F[i] >= Flim:
-                desired_security_stock = i
-                break
-        self.desired_security_inventory = (
-            desired_security_stock
-            + (self.reception_delay + self.command_delay - 2)
-            * int(np.mean(empirical_demand))
-        )
+        # cs = 0.5
+        # cm = 1
+        # Flim = cm / (cm + cs)
+        # if len(self.received_orders) > timeslot:
+        #     empirical_demand = self.received_orders[-timeslot:]
+        # else:
+        #     empirical_demand = self.received_orders
+        # F = np.zeros(max(empirical_demand) + 1)
+        # desired_security_stock = 0
+        # for i in range(0, max(empirical_demand) + 1):
+        #     F[i] = (
+        #         sum([1 for xi in empirical_demand if xi <= i]) / 10
+        #     )  # fonction de répartition
+        #     if F[i] >= Flim:
+        #         desired_security_stock = i
+        #         break
+        # self.desired_security_inventory = (
+        #     desired_security_stock
+        #     + (self.reception_delay + self.command_delay - 2)
+        #     * int(np.mean(empirical_demand))
+        # )
 
     def cost(self):
         """
@@ -86,14 +86,20 @@ class Agent:
 
         return 0.5 * self.inventory + 1 * self.backlog
 
-    def predict(self, last_order):
+    def predict(self, timestep):
         """
         Function that update the estimation of expected_order,
         by using an adaptative formula, as mentionned in Croson
         """
-        self.expected_order = int(
-            self.theta * last_order + (1 - self.theta) * self.expected_order
-        )
+        if timestep < 10:
+            timeslot = timestep
+        else:
+            timeslot = 10
+        sum = 0
+        for i in range(timeslot):
+            sum += (timeslot - i)*self.received_orders[-(i+1)]
+        den = timeslot * (timeslot+1) /2
+        self.expected_order = np.ceil(sum/den)
 
     def behaviour(self):
         """
@@ -101,7 +107,7 @@ class Agent:
         and parameters
         """
 
-        desired_inventory = int(np.ceil(np.mean(self.received_orders)*(self.command_delay + self.reception_delay - 1) + self.stock_constant * np.std(self.received_orders)))                                                                                                                                             
+        desired_inventory = self.desired_security_inventory
         supply_line = np.sum(
             self.sent_orders[-(self.command_delay + self.reception_delay - 1) :]
         )
@@ -138,7 +144,7 @@ class Agent:
             ),
         )
 
-    def act(self, order_made_by_previous_actor, received_shipment):
+    def act(self, order_made_by_previous_actor, received_shipment, timestep):
         """
         Act at a time step :
         - Receive a shipment
@@ -177,7 +183,7 @@ class Agent:
         self.inventory -= sent_shipment
         self.sent_shipments.append(sent_shipment)
 
-        self.predict(order_made_by_previous_actor)
+        self.predict(timestep)
         self.update_desired_security_stock()
         new_order = self.behaviour()
         self.sent_orders.append(new_order)
@@ -286,7 +292,7 @@ class Game:
                 # by the next actor two weeks ago
                 received_shipment = received_shipment_at_each_step[i + 1]
 
-            current_actor.act(received_order, received_shipment)
+            current_actor.act(received_order, received_shipment, self.timestep)
             self.global_cost += current_actor.cost()
 
         self.timestep += 1
@@ -300,15 +306,15 @@ class Game:
             var = np.std(agent.sent_orders[-timeslot:])
             print(var)
 
-    def plot_orders_made(self):
+    def plot_orders_made(self, timeslot = 0):
         fig, axs = plt.subplots(2, 2)
-        axs[0, 0].plot(self.list_of_actors[0].sent_orders)
+        axs[0, 0].plot(self.list_of_actors[0].sent_orders[timeslot:])
         axs[0, 0].set_title("Actor " + self.list_of_actors[0].name)
-        axs[0, 1].plot(self.list_of_actors[1].sent_orders)
+        axs[0, 1].plot(self.list_of_actors[1].sent_orders[timeslot:])
         axs[0, 1].set_title("Actor " + self.list_of_actors[1].name)
-        axs[1, 0].plot(self.list_of_actors[2].sent_orders)
+        axs[1, 0].plot(self.list_of_actors[2].sent_orders[timeslot:])
         axs[1, 0].set_title("Actor " + self.list_of_actors[2].name)
-        axs[1, 1].plot(self.list_of_actors[3].sent_orders)
+        axs[1, 1].plot(self.list_of_actors[3].sent_orders[timeslot:])
         axs[1, 1].set_title("Actor " + self.list_of_actors[3].name)
 
         axs[0, 0].set(ylabel="Orders sent")
@@ -320,19 +326,19 @@ class Game:
 
         return fig, axs
 
-    def plot_stocks(self):
+    def plot_stocks(self, timeslot = 0):
         fig, axs = plt.subplots(2, 2)
-        axs[0, 0].plot(self.list_of_actors[0].inventory_history)
+        axs[0, 0].plot(self.list_of_actors[0].inventory_history[timeslot:])
         axs[0, 0].set_title("Actor " + self.list_of_actors[0].name)
-        axs[0, 1].plot(self.list_of_actors[1].inventory_history)
+        axs[0, 1].plot(self.list_of_actors[1].inventory_history[timeslot:])
         axs[0, 1].set_title("Actor " + self.list_of_actors[1].name)
-        axs[1, 0].plot(self.list_of_actors[2].inventory_history)
+        axs[1, 0].plot(self.list_of_actors[2].inventory_history[timeslot:])
         axs[1, 0].set_title("Actor " + self.list_of_actors[2].name)
-        axs[1, 1].plot(self.list_of_actors[3].inventory_history)
+        axs[1, 1].plot(self.list_of_actors[3].inventory_history[timeslot:])
         axs[1, 1].set_title("Actor " + self.list_of_actors[3].name)
 
-        axs[0, 0].set(ylabel="Orders sent")
-        axs[1, 0].set(xlabel="Time", ylabel="Inventory at the beginning of the week")
+        axs[0, 0].set(ylabel="Invetory")
+        axs[1, 0].set(xlabel="Time", ylabel="Inventory")
         axs[1, 1].set(xlabel="Time")
 
         fig.tight_layout()
